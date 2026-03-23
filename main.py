@@ -2,6 +2,7 @@ import os
 import pathlib
 from dotenv import load_dotenv
 import google.genai as genai
+from google.genai import types
 
 load_dotenv()
 
@@ -41,6 +42,15 @@ while True:
     user_input = input("You: ") # Get user input from the command line
     model_name = "" # Specify the model you want to use, e.g., "gemini-1.5-pro"
 
+    system_prompt = """
+    You are a senior software engineer.
+
+    Rules:
+    - Answer in bullet points
+    - Do not exceed 50 words
+    - Explain step by step
+    """
+
     if user_input.lower() in ["exit", "quit"]:
         print("Exiting the chatbot. Goodbye!")
         break
@@ -53,7 +63,11 @@ while True:
     response = client.models.generate_content(
         model=model_name,
         contents=history, # Pass the conversation history to maintain context
-        config={"temperature": 0.7}, # Adjust the temperature for more creative responses 0-1
+        config=types.GenerateContentConfig(
+            temperature=0.7, # Adjust the temperature for more creative responses
+            system_instruction=system_prompt
+            # Provide the system prompt as a list to ensure it's included in the generation process
+        ),
     )
 
     bot_reply = response.text
