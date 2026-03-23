@@ -38,11 +38,9 @@ update_model_information_in_file("models.txt", model_info)
 
 history = []
 
-while True:
-    user_input = input("You: ") # Get user input from the command line
-    model_name = "" # Specify the model you want to use, e.g., "gemini-1.5-pro"
+model_name = "" # Specify the model you want to use, e.g., "gemini-1.5-pro"
 
-    system_prompt = """
+system_prompt = """
     You are a senior software engineer.
 
     Rules:
@@ -50,6 +48,12 @@ while True:
     - Do not exceed 50 words
     - Explain step by step
     """
+
+while True:
+    if len(history)>10:
+        history = history[-10:] # Keep only the last 10 interactions to manage context length
+        
+    user_input = input("You: ") # Get user input from the command line
 
     if user_input.lower() in ["exit", "quit"]:
         print("Exiting the chatbot. Goodbye!")
@@ -72,7 +76,7 @@ while True:
 
     bot_reply = response.text
     history.append({
-        "role": model_name,
+        "role": f"model:{model_name}",
         "parts": [{"text": bot_reply}]
     })
     print(f"{model_name}:", bot_reply)
