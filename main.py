@@ -1,5 +1,6 @@
 import os
 import pathlib
+from time import sleep
 from dotenv import load_dotenv
 import google.genai as genai
 from google.genai import types
@@ -45,14 +46,16 @@ system_prompt = """
 
     Rules:
     - Answer in bullet points
-    - Do not exceed 50 words
     - Explain step by step
     """
 
+if model_name == "":
+    model_name = client.models.list()[0].name
+
 while True:
-    if len(history)>10:
-        history = history[-10:] # Keep only the last 10 interactions to manage context length
-        
+    if len(str(history))>8000:
+        history = history[-6:] 
+
     user_input = input("You: ") # Get user input from the command line
 
     if user_input.lower() in ["exit", "quit"]:
@@ -63,20 +66,37 @@ while True:
         "role": "user",
         "parts": [{"text": user_input}]
     })
+    
+    bot_reply = ""
+    
+    try:
+        stream = client.models.generate_content_stream(
+            model=model_name,
+            contents=history, # Pass the conversation history to maintain context
+            config=types.GenerateContentConfig(
+                temperature=0.7, # Adjust the temperature for more creative responses
+                system_instruction=[{"text": system_prompt}]
+                # Provide the system prompt as a list to ensure it's included in the generation process
+            ),
+        )
 
-    response = client.models.generate_content(
-        model=model_name,
-        contents=history, # Pass the conversation history to maintain context
-        config=types.GenerateContentConfig(
-            temperature=0.7, # Adjust the temperature for more creative responses
-            system_instruction=system_prompt
-            # Provide the system prompt as a list to ensure it's included in the generation process
-        ),
-    )
+        print(f"{model_name}: ", end="", flush=True)
 
-    bot_reply = response.text
+        for chunk in stream:
+            if chunk.text:
+                for line in chunk.text.splitlines():
+                    for char in line:
+                        print(char, end="", flush=True)
+                        sleep(0.1)  # Simulate typing delay
+                        bot_reply += char
+                    print()  # Move to the next line after the bot finishes replying
+                    bot_reply += "\n"  # Add a newline after each line of the bot's response
+
+    except Exception as e:
+        print(f"Error generating response: {e}")
+        continue
+
     history.append({
-        "role": f"model:{model_name}",
+        "role": "model",
         "parts": [{"text": bot_reply}]
     })
-    print(f"{model_name}:", bot_reply)
