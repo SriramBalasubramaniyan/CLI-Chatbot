@@ -1,32 +1,51 @@
 import os
-from time import sleep
-from dotenv import load_dotenv
 import google.genai as genai
+from dotenv import load_dotenv
+import numpy as np
+import pickle
+from pathlib import Path
 from google.genai import types
+from time import sleep
 
 load_dotenv()
 
 client = genai.Client(api_key=os.getenv("API_KEY"))
 
-max_tokens = int(os.getenv("Max_Tokens", 8000))
+max_tokens = int(os.getenv("Max_Tokens").strip() or 8000)
 
-max_history_length = int(os.getenv("Max_History_Length", 6))
+max_history_length = int(os.getenv("Max_History_Length").strip() or 6)
 
-model_name = "" # Specify the model you want to use, e.g., "gemini-1.5-pro"
+cache_file = "embeddings.pkl"
+cache_dir = Path.cwd()/"data"
+
+gen_model_name = ""
+embed_model_name = ""
+
+cache_file_path = cache_dir/cache_file
 
 system_prompt = """
-    You are a senior software engineer.
-
     Rules:
-    - Answer in bullet points
+    - Answer in friednly and easy to understand terms
+    - dont ask follow up questions
     - Explain step by step
-    - Max 50 words
+    - Do not use outside knowledge
+    - Do not hallucinate
     - If you don't know the answer, say "I don't know" instead of making up an answer.
     - Never share any personal information or sensitive data.
     """
 
-if model_name == "":
-    model_name = client.models.list()[0].name
+if gen_model_name == "":
+    gen_model_name = os.getenv("GEN_MODEL_NAME").strip() or client.models.list()[0].name
+
+documents = [
+    "Flutter is used for mobile development",
+    "Python is used for AI",
+    "Dart is Flutter's language",
+    "AI uses machine learning"
+]
+
+if embed_model_name == "":
+    embed_model_name = os.getenv("EMBEDDING_MODEL_NAME").strip() or "gemini-embedding-001"
 
 history = []
 
@@ -49,27 +68,78 @@ def trim_history(history, system_prompt):
             break
     return history
 
-while True:
-    user_input = input("You: ") # Get user input from the command line
+try:
+    cache_dir.mkdir(parents=True,exist_ok=True)
+except OSError as e:
+    print(e)
 
-    if user_input.lower() in ["exit", "quit"]:
+def cosine_similarity(a,b):
+    return np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b))
+
+if os.path.exists(cache_file_path):
+    with open(cache_file_path, "rb") as f:
+        doc_embedding = pickle.load(f)
+else:
+    doc_embedding = []
+    for doc in documents:
+        emb = client.models.embed_content(
+                model=embed_model_name,
+                contents=doc                
+            ).embeddings[0].values
+        
+        doc_embedding.append((doc,emb))
+
+    with open(cache_file_path, "wb") as f:
+        pickle.dump(doc_embedding, f)
+
+while True:
+    print()
+    print("Query:",end="",flush=True)
+    qry = input().lower().strip()
+    
+    if qry.lower() in ["exit", "quit"]:
         print("Exiting the chatbot. Goodbye!")
         break
 
-    history.append({
-        "role": "user",
-        "parts": [{"text": user_input}]
-    })
-    
-    # Trim history BEFORE sending    
-    history = trim_history(history, system_prompt)
-
-    bot_reply = ""
-    
     try:
+        qry_emb = client.models.embed_content(
+            model=embed_model_name,
+            contents=qry
+        ).embeddings[0].values
+
+        best_match = None
+        best_score = -1
+        scores = []
+        
+        for doc, emb in doc_embedding:
+            score = cosine_similarity(qry_emb, emb)
+            scores.append((doc, score))
+        
+        top_k = [(doc, score) for doc, score in scores if score > 0.6][:3]
+
+        if not top_k:
+            print("No relevant context found")
+            continue
+
+        context = "\n".join([doc for doc, _ in top_k])
+
+        bot_reply = ""
+
+        prompt = f'''
+            answer the question only using the context below
+            context:{context}
+            question:{qry}
+        '''
+
+        # Trim history BEFORE sending    
+        history = trim_history(history, system_prompt)
+
         stream = client.models.generate_content_stream(
-            model=model_name,
-            contents=history, # Pass the conversation history to maintain context
+            model=gen_model_name,
+            contents=history + [{
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }], # Pass the conversation history to maintain context
             config=types.GenerateContentConfig(
                 temperature=0.7, # Adjust the temperature for more creative responses
                 system_instruction=[{"text": system_prompt}]
@@ -77,7 +147,7 @@ while True:
             ),
         )
 
-        print(f"{model_name}: ", end="", flush=True)
+        print(f"{gen_model_name}: ", end="", flush=True)
 
         for chunk in stream:
             if chunk.text:
@@ -89,11 +159,16 @@ while True:
                     print()  # Move to the next line after the bot finishes replying
                     bot_reply += "\n"  # Add a newline after each line of the bot's response
 
-    except Exception as e:
-        print(f"Error generating response: {e}")
-        continue
+        history.append({
+            "role": "user",
+            "parts": [{"text": qry}]
+        })
 
-    history.append({
-        "role": "model",
-        "parts": [{"text": bot_reply}]
-    })
+        history.append({
+            "role": "model",
+            "parts": [{"text": bot_reply}]
+        })
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        continue
