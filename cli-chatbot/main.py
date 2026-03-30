@@ -25,13 +25,12 @@ cache_file_path = cache_dir/cache_file
 
 system_prompt = """
     Rules:
-    - Answer in friednly and easy to understand terms
-    - dont ask follow up questions
-    - Explain step by step
-    - Do not use outside knowledge
-    - Do not hallucinate
-    - If you don't know the answer, say "I don't know" instead of making up an answer.
-    - Never share any personal information or sensitive data.
+    - Answer in friendly and easy to understand terms,
+    - Explain step by step when necessary like implementation or if the user question requires step by step guide,
+    - Do not use outside knowledge,
+    - Do not hallucinate,
+    - If you don't have the answer, don't make something up instead inform the user,
+    - Never share any personal information or sensitive data
     """
 
 if gen_model_name == "":
