@@ -126,4 +126,5 @@ def process_folder(folder_path):
             except Exception as e:
                 print(f"❌ Error processing {file}: {e}")
 
-process_folder("source")
+if __name__ == "__main__":
+    process_folder("source")
