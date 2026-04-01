@@ -1,11 +1,13 @@
 import os
 import google.genai as genai
 from dotenv import load_dotenv
-import numpy as np
 import pickle
 from pathlib import Path
 from google.genai import types
 from time import sleep
+from extract_data import parse_plain_text
+from chunk_spliting import chunk_text
+from cosine_similarity import cosine_similarity
 
 load_dotenv()
 
@@ -14,6 +16,8 @@ client = genai.Client(api_key=os.getenv("API_KEY"))
 max_tokens = int(os.getenv("Max_Tokens").strip() or 8000)
 
 max_history_length = int(os.getenv("Max_History_Length").strip() or 6)
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 cache_file = "embeddings.pkl"
 cache_dir = Path.cwd()/"data"
@@ -36,12 +40,7 @@ system_prompt = """
 if gen_model_name == "":
     gen_model_name = os.getenv("GEN_MODEL_NAME").strip() or client.models.list()[0].name
 
-documents = [
-    "Flutter is used for mobile development",
-    "Python is used for AI",
-    "Dart is Flutter's language",
-    "AI uses machine learning"
-]
+documents = chunk_text(parse_plain_text(os.path.join(script_dir,"extract","file name")))
 
 if embed_model_name == "":
     embed_model_name = os.getenv("EMBEDDING_MODEL_NAME").strip() or "gemini-embedding-001"
@@ -71,9 +70,6 @@ try:
     cache_dir.mkdir(parents=True,exist_ok=True)
 except OSError as e:
     print(e)
-
-def cosine_similarity(a,b):
-    return np.dot(a,b)/(np.linalg.norm(a)*np.linalg.norm(b))
 
 if os.path.exists(cache_file_path):
     with open(cache_file_path, "rb") as f:
