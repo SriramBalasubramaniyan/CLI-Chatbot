@@ -4,17 +4,22 @@ from google.genai import types
 from time import sleep
 from extract_data import parse_plain_text, process_folder
 from chunk_spliting import chunk_text
-from cosine_similarity import cosine_similarity
 import __init__ as i
+import faiss
+import numpy as np
 
 process_folder(i.source_folder, i.extract_folder)
 
+documents=[]
+
 for file in os.listdir(i.extract_folder):
     full_path = os.path.join(i.extract_folder, file)
-    if not os.path.isfile(full_path):
-            continue
 
-    documents = chunk_text(parse_plain_text(full_path))
+    if not os.path.isfile(full_path):
+        continue
+    
+    chunks = chunk_text(parse_plain_text(full_path))
+    documents.extend(chunks)
 
 history = []
 
@@ -58,6 +63,11 @@ else:
     with open(i.cache_file_path, "wb") as f:
         pickle.dump(doc_embedding, f)
 
+dimension = len(doc_embedding[0][1])
+index = faiss.IndexFlatL2(dimension)
+vector = np.array([emb for _, emb in doc_embedding]).astype("float32")
+index.add(vector)
+
 while True:
     print()
     print("Query:",end="",flush=True)
@@ -73,19 +83,17 @@ while True:
             contents=qry
         ).embeddings[0].values
 
-        scores = []
-        
-        for doc, emb in doc_embedding:
-            score = cosine_similarity(qry_emb, emb)
-            scores.append((doc, score))
-        
-        top_k = [(doc, score) for doc, score in scores if score > 0.6][:3]
+        query_vector = np.array([qry_emb]).astype("float32")
+
+        distance, indices = index.search(query_vector, k=3)
+
+        top_k = [doc_embedding[i][0] for i in indices[0]]
 
         if not top_k:
             print("No relevant context found")
             continue
 
-        context = "\n".join([doc for doc, _ in top_k])
+        context = "\n\n".join([f"-{doc}" for doc in top_k])
 
         bot_reply = ""
 
