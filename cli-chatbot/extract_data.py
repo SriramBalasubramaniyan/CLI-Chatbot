@@ -1,36 +1,37 @@
 import os
+import shutil
 import pdfplumber
 import pandas as pd
 from docx import Document
 import sqlite3
 
-def convert_to_text(file_path):
-    ext = file_path.lower().split('.')[-1]
+def convert_to_text(source_file_path):
+    ext = source_file_path.lower().split('.')[-1]
 
     if ext == "pdf":
-        return parse_pdf(file_path)
+        return parse_pdf(source_file_path)
     elif ext in ["xls", "xlsx"]:
-        return parse_excel(file_path)
+        return parse_excel(source_file_path)
     elif ext == "csv":
-        return parse_csv(file_path)
+        return parse_csv(source_file_path)
     elif ext == "docx":
-        return parse_docx(file_path)
+        return parse_docx(source_file_path)
     elif ext == "db":
-        return parse_sqlite(file_path)
+        return parse_sqlite(source_file_path)
     else:
-        return parse_plain_text(file_path)
+        return parse_plain_text(source_file_path)
 
 
-def parse_pdf(file_path):
+def parse_pdf(source_file_path):
     text = ""
-    with pdfplumber.open(file_path) as pdf:
+    with pdfplumber.open(source_file_path) as pdf:
         for page in pdf.pages:
             text += page.extract_text() or ""
     return text
 
-def parse_excel(file_path):
+def parse_excel(source_file_path):
     text = ""
-    xls = pd.ExcelFile(file_path)
+    xls = pd.ExcelFile(source_file_path)
 
     for sheet in xls.sheet_names:
         df = xls.parse(sheet)
@@ -45,8 +46,8 @@ def parse_excel(file_path):
 
     return text
 
-def parse_csv(file_path):
-    df = pd.read_csv(file_path)
+def parse_csv(source_file_path):
+    df = pd.read_csv(source_file_path)
     
     text = ""
     columns = df.columns.tolist()
@@ -60,13 +61,13 @@ def parse_csv(file_path):
     return df.to_string(index=False)
 
 
-def parse_docx(file_path):
-    doc = Document(file_path)
+def parse_docx(source_file_path):
+    doc = Document(source_file_path)
     return "\n".join([p.text for p in doc.paragraphs])
 
 
-def parse_sqlite(file_path):
-    conn = sqlite3.connect(file_path)
+def parse_sqlite(source_file_path):
+    conn = sqlite3.connect(source_file_path)
     cursor = conn.cursor()
 
     text = ""
@@ -90,41 +91,62 @@ def parse_sqlite(file_path):
     conn.close()
     return text
 
-def parse_plain_text(file_path):
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+def parse_plain_text(source_file_path):
+    with open(source_file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read()
 
 def save_as_txt(text, output_path):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(text)
 
-def process_file(file_path):
-    text = convert_to_text(file_path)
+def process_file(source_file_path, extract_folder_path):
+    text = convert_to_text(source_file_path)
 
-    parent_dir = os.path.dirname(os.path.dirname(file_path))
-    output_folder = os.path.join(parent_dir, "extract")
+    parent_dir = os.path.dirname(os.path.dirname(source_file_path))
+    output_folder = os.path.join(parent_dir, extract_folder_path)
     
     os.makedirs(output_folder, exist_ok=True)
 
-    output_file = os.path.join(output_folder, os.path.basename(file_path) + ".txt")
+    output_file = os.path.join(output_folder, os.path.basename(source_file_path) + ".txt")
     save_as_txt(text, output_file)
 
     print(f"✅ Converted: {output_file}")
 
-def process_folder(folder_path):
-    for file in os.listdir(folder_path):
-        full_path = os.path.join(folder_path, file)
+def process_folder(source_folder_path, extract_folder_path):
+    parent_dir = os.path.dirname(source_folder_path)
+    output_folder = os.path.join(parent_dir, extract_folder_path)
+    os.makedirs(output_folder, exist_ok=True)
 
-        ext = os.path.splitext(file)[1].lower().replace('.', '')
-        
-        if ext == "txt": 
+    for file in os.listdir(source_folder_path):
+        full_path = os.path.join(source_folder_path, file)
+
+        if not os.path.isfile(full_path):
             continue
 
-        if os.path.isfile(full_path):
+        ext = os.path.splitext(file)[1].lower().replace('.', '')
+        output_text_path = os.path.join(output_folder, file + ".txt")
+
+        if ext == "txt":
+            dest_path = os.path.join(output_folder, file)
+            if os.path.exists(dest_path):
+                print(f"⏭️ Skipped existing txt: {dest_path}")
+                continue
             try:
-                process_file(full_path)
+                shutil.copy2(full_path, dest_path)
+                print(f"✅ Copied txt: {dest_path}")
             except Exception as e:
-                print(f"❌ Error processing {file}: {e}")
+                print(f"❌ Error copying txt {file}: {e}")
+            continue
+
+        if os.path.exists(output_text_path):
+            print(f"⏭️ Skipped already processed: {output_text_path}")
+            continue
+
+        try:
+            process_file(full_path, extract_folder_path)
+            print(f"✅ Processed file: {full_path}")
+        except Exception as e:
+            print(f"❌ Error processing {file}: {e}")
 
 if __name__ == "__main__":
-    process_folder("source")
+    process_folder(source_folder_path="source", extract_folder_path="extract")

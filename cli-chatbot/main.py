@@ -1,49 +1,20 @@
 import os
-import google.genai as genai
-from dotenv import load_dotenv
 import pickle
-from pathlib import Path
 from google.genai import types
 from time import sleep
-from extract_data import parse_plain_text
+from extract_data import parse_plain_text, process_folder
 from chunk_spliting import chunk_text
 from cosine_similarity import cosine_similarity
+import __init__ as i
 
-load_dotenv()
+process_folder(i.source_folder, i.extract_folder)
 
-client = genai.Client(api_key=os.getenv("API_KEY"))
+for file in os.listdir(i.extract_folder):
+    full_path = os.path.join(i.extract_folder, file)
+    if not os.path.isfile(full_path):
+            continue
 
-max_tokens = int(os.getenv("Max_Tokens").strip() or 8000)
-
-max_history_length = int(os.getenv("Max_History_Length").strip() or 6)
-
-script_dir = os.path.dirname(os.path.abspath(__file__))
-
-cache_file = "embeddings.pkl"
-cache_dir = Path.cwd()/"data"
-
-gen_model_name = ""
-embed_model_name = ""
-
-cache_file_path = cache_dir/cache_file
-
-system_prompt = """
-    Rules:
-    - Answer in friendly and easy to understand terms,
-    - Explain step by step when necessary like implementation or if the user question requires step by step guide,
-    - Do not use outside knowledge,
-    - Do not hallucinate,
-    - If you don't have the answer, don't make something up instead inform the user,
-    - Never share any personal information or sensitive data
-    """
-
-if gen_model_name == "":
-    gen_model_name = os.getenv("GEN_MODEL_NAME").strip() or client.models.list()[0].name
-
-documents = chunk_text(parse_plain_text(os.path.join(script_dir,"extract","file name")))
-
-if embed_model_name == "":
-    embed_model_name = os.getenv("EMBEDDING_MODEL_NAME").strip() or "gemini-embedding-001"
+    documents = chunk_text(parse_plain_text(full_path))
 
 history = []
 
@@ -58,7 +29,7 @@ def count_history_tokens(history, system_prompt):
     return total_tokens
 
 def trim_history(history, system_prompt):
-    while count_history_tokens(history, system_prompt) > max_tokens:
+    while count_history_tokens(history, system_prompt) > i.max_tokens:
         if len(history) >= 2:
             history.pop(0) # Remove the oldest User entry
             history.pop(0) # Remove the corresponding Model entry
@@ -67,24 +38,24 @@ def trim_history(history, system_prompt):
     return history
 
 try:
-    cache_dir.mkdir(parents=True,exist_ok=True)
+    i.cache_dir.mkdir(parents=True,exist_ok=True)
 except OSError as e:
     print(e)
 
-if os.path.exists(cache_file_path):
-    with open(cache_file_path, "rb") as f:
+if os.path.exists(i.cache_file_path):
+    with open(i.cache_file_path, "rb") as f:
         doc_embedding = pickle.load(f)
 else:
     doc_embedding = []
     for doc in documents:
-        emb = client.models.embed_content(
-                model=embed_model_name,
+        emb = i.client.models.embed_content(
+                model=i.embed_model_name,
                 contents=doc                
             ).embeddings[0].values
         
         doc_embedding.append((doc,emb))
 
-    with open(cache_file_path, "wb") as f:
+    with open(i.cache_file_path, "wb") as f:
         pickle.dump(doc_embedding, f)
 
 while True:
@@ -97,8 +68,8 @@ while True:
         break
 
     try:
-        qry_emb = client.models.embed_content(
-            model=embed_model_name,
+        qry_emb = i.client.models.embed_content(
+            model=i.embed_model_name,
             contents=qry
         ).embeddings[0].values
 
@@ -125,22 +96,22 @@ while True:
         '''
 
         # Trim history BEFORE sending    
-        history = trim_history(history, system_prompt)
+        history = trim_history(history, i.system_prompt)
 
-        stream = client.models.generate_content_stream(
-            model=gen_model_name,
+        stream = i.client.models.generate_content_stream(
+            model=i.gen_model_name,
             contents=history + [{
                 "role": "user",
                 "parts": [{"text": prompt}]
             }], # Pass the conversation history to maintain context
             config=types.GenerateContentConfig(
                 temperature=0.7, # Adjust the temperature for more creative responses
-                system_instruction=[{"text": system_prompt}]
+                system_instruction=[{"text": i.system_prompt}]
                 # Provide the system prompt as a list to ensure it's included in the generation process
             ),
         )
 
-        print(f"{gen_model_name}: ", end="", flush=True)
+        print(f"{i.gen_model_name}: ", end="", flush=True)
 
         for chunk in stream:
             if chunk.text:
