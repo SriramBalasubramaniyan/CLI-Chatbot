@@ -7,6 +7,7 @@ from chunk_spliting import chunk_text
 import __init__ as i
 import faiss
 import numpy as np
+from local_embedding import LocalEmbeddingEngine
 
 process_folder(i.source_folder, i.extract_folder)
 
@@ -42,6 +43,8 @@ def trim_history(history, system_prompt):
             break
     return history
 
+embed_engine = LocalEmbeddingEngine()
+
 try:
     i.cache_dir.mkdir(parents=True,exist_ok=True)
 except OSError as e:
@@ -53,11 +56,14 @@ if os.path.exists(i.cache_file_path):
 else:
     doc_embedding = []
     for doc in documents:
-        emb = i.client.models.embed_content(
-                model=i.embed_model_name,
-                contents=doc                
-            ).embeddings[0].values
-        
+
+        # emb = i.client.models.embed_content(
+        #         model=i.embed_model_name,
+        #         contents=doc                
+        #     ).embeddings[0].values
+
+        emb = embed_engine.create_embedding(doc)[0]
+
         doc_embedding.append((doc,emb))
 
     with open(i.cache_file_path, "wb") as f:
@@ -65,7 +71,8 @@ else:
 
 dimension = len(doc_embedding[0][1])
 index = faiss.IndexFlatL2(dimension)
-vector = np.array([emb for _, emb in doc_embedding]).astype("float32")
+# vector = np.array([emb for _, emb in doc_embedding]).astype("float32")
+vector = np.vstack([emb for _, emb in doc_embedding]).astype("float32")
 index.add(vector)
 
 while True:
@@ -78,13 +85,16 @@ while True:
         break
 
     try:
-        qry_emb = i.client.models.embed_content(
-            model=i.embed_model_name,
-            contents=qry
-        ).embeddings[0].values
+        # qry_emb = i.client.models.embed_content(
+        #     model=i.embed_model_name,
+        #     contents=qry
+        # ).embeddings[0].values
 
-        query_vector = np.array([qry_emb]).astype("float32")
+        qry_emb = embed_engine.create_embedding(qry)[0]
 
+        # query_vector = np.array([qry_emb]).astype("float32")
+        query_vector = np.vstack([qry_emb]).astype("float32")
+        
         distance, indices = index.search(query_vector, k=3)
 
         top_k = [doc_embedding[i][0] for i in indices[0]]

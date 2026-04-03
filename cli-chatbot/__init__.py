@@ -29,7 +29,8 @@ if gen_model_name == "":
 embed_model_name = ""
 
 if embed_model_name == "":
-    embed_model_name = os.getenv("EMBEDDING_MODEL_NAME").strip() or "gemini-embedding-001"
+    embed_model_name = os.getenv("EMBEDDING_MODEL_NAME").strip() or "BAAI/bge-base-en-v1.5"
+    # "gemini-embedding-001"
 
 system_prompt = """
     Rules:
