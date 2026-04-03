@@ -16,5 +16,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "python-docx>=1.2.0",
     "python-dotenv>=1.2.2",
+    "sentence-transformers>=5.3.0",
     "sqlite-utils>=3.39",
+    "torch>=2.11.0",
 ]
