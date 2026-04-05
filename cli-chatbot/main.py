@@ -62,9 +62,9 @@ else:
         #         contents=doc                
         #     ).embeddings[0].values
 
-        emb = embed_engine.create_embedding(doc)[0]
+        emb = embed_engine.create_embedding(doc)
 
-        doc_embedding.append((doc,emb))
+        doc_embedding.append((doc,emb[0]))
 
     with open(i.cache_file_path, "wb") as f:
         pickle.dump(doc_embedding, f)
@@ -90,10 +90,10 @@ while True:
         #     contents=qry
         # ).embeddings[0].values
 
-        qry_emb = embed_engine.create_embedding(qry)[0]
+        qry_emb = embed_engine.create_embedding(qry)
 
         # query_vector = np.array([qry_emb]).astype("float32")
-        query_vector = np.vstack([qry_emb]).astype("float32")
+        query_vector = np.vstack([qry_emb[0]]).astype("float32")
         
         distance, indices = index.search(query_vector, k=3)
 

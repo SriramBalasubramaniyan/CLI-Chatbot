@@ -46,5 +46,3 @@ if __name__ == "__main__":
     data_to_embed = []
 
     vectors = engine.create_embedding(data_to_embed)
-
-    print(f"Generated {len(vectors)} vectors with {vectors.shape[1]} dimensions.")

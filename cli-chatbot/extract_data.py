@@ -65,30 +65,95 @@ def parse_docx(source_file_path):
     doc = Document(source_file_path)
     return "\n".join([p.text for p in doc.paragraphs])
 
-
 def parse_sqlite(source_file_path):
     conn = sqlite3.connect(source_file_path)
+    conn.row_factory = sqlite3.Row  # Allows column name access
     cursor = conn.cursor()
 
-    text = ""
-
+    # ── Step 1: Load ALL tables into memory first (needed for FK resolution) ──
+    all_data = {}
     tables = cursor.execute(
         "SELECT name FROM sqlite_master WHERE type='table';"
     ).fetchall()
 
-    for table_name in tables:
-        table = table_name[0]
-        text += f"\n===== Table: {table} =====\n"
-        
+    for (table,) in tables:
         columns_info = cursor.execute(f"PRAGMA table_info({table})").fetchall()
-        columns = [col[1] for col in columns_info]  # col[1] = column name
-
+        columns = [col[1] for col in columns_info]
         rows = cursor.execute(f"SELECT * FROM {table}").fetchall()
+        all_data[table] = {
+            "columns": columns,
+            "rows": [dict(zip(columns, row)) for row in rows]
+        }
 
-        for row in rows:
-            text += " | ".join([f"{col}: {val}" for col, val in zip(columns, row)]) + "\n"
+    # ── Step 2: Build FK map  {table: [(fk_col, ref_table, ref_col)]} ──
+    fk_map = {}
+    for table in all_data:
+        fk_info = cursor.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+        fk_map[table] = [
+            (fk[3], fk[2], fk[4])   # (from_col, to_table, to_col)
+            for fk in fk_info
+        ]
 
     conn.close()
+
+    # ── Step 3: Helper — resolve a FK code to a human-readable name ──
+    def resolve_fk(ref_table, ref_col, ref_val):
+        if ref_table not in all_data:
+            return None
+
+        ref_columns = all_data[ref_table]["columns"]
+
+        # Auto-detect: any column whose name contains "name" (case-insensitive)
+        name_cols = [c for c in ref_columns if "name" in c.lower()]
+
+        for row in all_data[ref_table]["rows"]:
+            if str(row.get(ref_col)) == str(ref_val):
+                # Try auto-detected name columns first
+                for col in name_cols:
+                    if row.get(col):
+                        return row[col]
+                # Final fallback: first non-empty, non-id column
+                for col, val in row.items():
+                    if col != ref_col and val:
+                        return str(val)
+        return None
+
+    # ── Step 4: Render each table into clean readable text ──
+    text = ""
+
+    for table, data in all_data.items():
+        if not data["rows"]:
+            continue  # Skip empty tables
+
+        text += f"\n{'='*50}\n"
+        text += f"  {table.upper()}\n"
+        text += f"{'='*50}\n"
+
+        fks = fk_map.get(table, [])
+        fk_cols = {fk[0]: (fk[1], fk[2]) for fk in fks}  # {col: (ref_table, ref_col)}
+
+        for row in data["rows"]:
+            fields = []
+            for col, val in row.items():
+                # ── Skip empty / None values ──
+                if val is None or str(val).strip() == "":
+                    continue
+
+                # ── Resolve FK to human-readable name ──
+                if col in fk_cols:
+                    ref_table, ref_col = fk_cols[col]
+                    resolved = resolve_fk(ref_table, ref_col, val)
+                    if resolved:
+                        fields.append(f"{col}: {resolved} (id: {val})")
+                        continue
+
+                fields.append(f"{col}: {val}")
+
+            if fields:
+                text += "• " + " | ".join(fields) + "\n"
+
+        text += "\n"
+
     return text
 
 def parse_plain_text(source_file_path):
